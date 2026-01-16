@@ -14,7 +14,7 @@ import java.time.LocalDate;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/v1/daily")
+@RequestMapping("/v1/daily")
 public class DailyTimelineController {
 
     private final DailyTimelineService dailyTimelineService;

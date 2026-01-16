@@ -20,7 +20,8 @@ public class DailyTimelineService {
 
     private final ArticleSummaryRepository articleSummaryRepository;
 
-    private static final int INITIAL_SIZE = 100;
+    // 초기 기사 30건 가져오기
+    private static final int INITIAL_SIZE = 30;
 
     public DailyTimelineResponse getInitialTimeline() {
 
