@@ -9,6 +9,7 @@ import jade.product.shortifyapi.domain.daily.dto.response.TimeGroupDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
 import java.util.*;
@@ -16,11 +17,14 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class DailyTimelineService {
 
     private final ArticleSummaryRepository articleSummaryRepository;
 
     private static final int INITIAL_SIZE = 100;
+    private static final Duration GROUP_GAP = Duration.ofHours(2);
+    private static final int SLOT_HOURS = 2;
 
     public DailyTimelineResponse getInitialTimeline() {
 
@@ -28,34 +32,22 @@ public class DailyTimelineService {
         LocalDateTime start = today.atStartOfDay();
         LocalDateTime end = today.plusDays(1).atStartOfDay();
 
-        List<ArticleSummary> summaries =
+        List<ArticleDto> articles =
                 articleSummaryRepository.findTodaySummaries(
-                        start,
-                        end,
-                        PageRequest.of(0, INITIAL_SIZE)
-                );
-
-        Map<Integer, List<ArticleDto>> grouped =
-                summaries.stream()
+                                start,
+                                end,
+                                PageRequest.of(0, INITIAL_SIZE)
+                        ).stream()
                         .map(this::toArticleDto)
-                        .collect(Collectors.groupingBy(
-                                dto -> dto.getPublishedAt().getHour() / 2
-                        ));
-
-        List<TimeGroupDto> groups =
-                grouped.entrySet().stream()
-                        // 최신 시간대 먼저
-                        .sorted(Map.Entry.<Integer, List<ArticleDto>>comparingByKey().reversed())
-                        .map(e -> toTimeGroup(e.getKey(), e.getValue()))
                         .toList();
 
-        LocalTime baseTime = summaries.isEmpty()
-                ? LocalTime.now()
-                : summaries.get(0).getArticleMeta().getPublishedAt().toLocalTime();
+        List<TimeGroupDto> groups = groupByFixedTimeline(articles);
 
         return new DailyTimelineResponse(
                 today,
-                baseTime,
+                articles.isEmpty()
+                        ? LocalTime.now()
+                        : articles.get(0).getPublishedAt().toLocalTime(),
                 groups
         );
     }
@@ -76,12 +68,28 @@ public class DailyTimelineService {
         );
     }
 
-    private TimeGroupDto toTimeGroup(int slot, List<ArticleDto> articles) {
-        int startHour = slot * 2;
-        int endHour = startHour + 1;
+    private List<TimeGroupDto> groupByFixedTimeline(List<ArticleDto> articles) {
+
+        Map<Integer, List<ArticleDto>> grouped =
+                articles.stream()
+                        .collect(Collectors.groupingBy(
+                                a -> a.getPublishedAt().getHour() / SLOT_HOURS
+                        ));
+
+        return grouped.entrySet().stream()
+                // 최신 시간대 먼저
+                .sorted(Map.Entry.<Integer, List<ArticleDto>>comparingByKey().reversed())
+                .map(e -> toFixedTimeGroup(e.getKey(), e.getValue()))
+                .toList();
+    }
+
+    private TimeGroupDto toFixedTimeGroup(int slot, List<ArticleDto> articles) {
+
+        int startHour = slot * SLOT_HOURS;
+        int endHour = startHour + SLOT_HOURS - 1;
 
         String range = String.format(
-                "%02d:00-%02d:59",
+                "%02d:00 ~ %02d:59",
                 startHour,
                 endHour
         );
