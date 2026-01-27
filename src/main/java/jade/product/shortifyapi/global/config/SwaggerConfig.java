@@ -12,7 +12,7 @@ public class SwaggerConfig {
     @Bean
     public OpenAPI openAPI() {
         return new OpenAPI()
-                .addServersItem(new Server().url("https://readworld.co.kr"))
+                .addServersItem(new Server().url("https://readworld.co.kr/api"))
                 .info(new Info()
                         .title("Shortify API")
                         .description("Shortify API Documentation")
