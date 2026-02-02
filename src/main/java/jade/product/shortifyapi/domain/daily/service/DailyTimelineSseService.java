@@ -6,6 +6,7 @@ import jade.product.shortifyapi.domain.daily.sse.TimelineSseEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -21,6 +22,7 @@ public class DailyTimelineSseService {
 
         emitter.onCompletion(() -> emitters.remove(emitter));
         emitter.onTimeout(() -> emitters.remove(emitter));
+        emitter.onError(e -> emitters.remove(emitter));
 
         return emitter;
     }
@@ -39,19 +41,31 @@ public class DailyTimelineSseService {
                                 .name("phase")
                                 .data(event)
                 );
-            } catch (Exception e) {
+            } catch (IOException e) {
+                emitters.remove(emitter);
+                emitter.complete(); // 클라이언트 끊김
+            }
+            catch (Exception e) {
+                emitters.remove(emitter);
+                emitter.completeWithError(e); // 서버 로직 에러
+            }
+
+        });
+    }
+
+    public void heartbeat() {
+        emitters.forEach(emitter -> {
+            try {
+                emitter.send(
+                        SseEmitter.event()
+                                .name("heartbeat")
+                                .data("")
+                );
+            } catch (Exception ex) {
+                emitters.remove(emitter);
                 emitter.complete();
             }
         });
     }
 
-    public void heartbeat() {
-        emitters.forEach(e -> {
-            try {
-                e.send(SseEmitter.event().name("heartbeat").data(""));
-            } catch (Exception ex) {
-                e.complete();
-            }
-        });
-    }
 }
