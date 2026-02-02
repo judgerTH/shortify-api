@@ -20,6 +20,15 @@ public class DailyTimelineSseService {
         SseEmitter emitter = new SseEmitter(0L);
         emitters.add(emitter);
 
+        // 연결 확인용 코드
+        try {
+            emitter.send(
+                    SseEmitter.event()
+                            .name("connected")
+                            .data("ok")
+            );
+        } catch (Exception ignored) {}
+
         emitter.onCompletion(() -> emitters.remove(emitter));
         emitter.onTimeout(() -> emitters.remove(emitter));
         emitter.onError(e -> emitters.remove(emitter));
