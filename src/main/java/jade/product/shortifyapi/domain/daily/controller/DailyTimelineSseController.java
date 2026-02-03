@@ -18,7 +18,10 @@ public class DailyTimelineSseController {
     /**
      * 타임라인 상태 구독
      */
-    @GetMapping("/v1/daily/timeline/sse")
+    @GetMapping(
+            value = "/v1/daily/timeline/sse",
+            produces = "text/event-stream"
+    )
     public SseEmitter connect() {
         return sseService.connect();
     }

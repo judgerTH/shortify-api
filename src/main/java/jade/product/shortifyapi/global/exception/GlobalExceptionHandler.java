@@ -40,7 +40,22 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<?>> handleException(Exception e) {
+    public ResponseEntity<?> handleException(
+            Exception e,
+            jakarta.servlet.http.HttpServletRequest request
+    ) {
+        String accept = request.getHeader("Accept");
+        String uri = request.getRequestURI();
+
+        boolean isSse =
+                (accept != null && accept.contains("text/event-stream")) ||
+                        uri.startsWith("/v1/daily/timeline/sse");
+
+        if (isSse) {
+            log.warn("SSE exception ignored by GlobalExceptionHandler", e);
+            return ResponseEntity.status(500).build();
+        }
+
         log.error("Unhandled exception", e);
 
         ErrorCode errorCode = ErrorCode.INTERNAL_ERROR;
@@ -49,4 +64,5 @@ public class GlobalExceptionHandler {
                 .status(errorCode.getHttpStatus())
                 .body(ApiResponse.error(ErrorResponse.of(errorCode)));
     }
+
 }
