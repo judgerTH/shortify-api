@@ -2,6 +2,8 @@ package jade.product.shortifyapi.domain.daily.service;
 
 import jade.product.shortifyapi.domain.article.entity.ArticleMeta;
 import jade.product.shortifyapi.domain.article.entity.ArticleSummary;
+import jade.product.shortifyapi.domain.article.repository.ArticleCommentRepository;
+import jade.product.shortifyapi.domain.article.repository.ArticleLikeRepository;
 import jade.product.shortifyapi.domain.article.repository.ArticleSummaryRepository;
 import jade.product.shortifyapi.domain.daily.dto.response.ArticleDto;
 import jade.product.shortifyapi.domain.daily.dto.response.DailyTimelineResponse;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 public class DailyTimelineService {
 
     private final ArticleSummaryRepository articleSummaryRepository;
+    private final ArticleLikeRepository  articleLikeRepository;
+    private final ArticleCommentRepository articleCommentRepository;
 
     // 초기 조회 시 가져올 최대 기사 수
     private static final int INITIAL_SIZE = 100;
@@ -42,14 +46,14 @@ public class DailyTimelineService {
         LocalDateTime start = today.atStartOfDay();
         LocalDateTime end = today.plusDays(1).atStartOfDay();
 
-        List<ArticleDto> articles =
+        List<ArticleSummary> summaries =
                 articleSummaryRepository.findTodaySummaries(
-                                start,
-                                end,
-                                PageRequest.of(0, INITIAL_SIZE)
-                        ).stream()
-                        .map(this::toArticleDto)
-                        .toList();
+                        start,
+                        end,
+                        PageRequest.of(0, INITIAL_SIZE)
+                );
+
+        List<ArticleDto> articles = toArticleDtos(summaries);
 
         List<TimeGroupDto> groups = groupByFixedTimeline(articles);
 
@@ -65,20 +69,54 @@ public class DailyTimelineService {
     /**
      * ArticleSummary → ArticleDto 변환
      */
-    private ArticleDto toArticleDto(ArticleSummary summary) {
-        ArticleMeta meta = summary.getArticleMeta();
+    private List<ArticleDto> toArticleDtos(List<ArticleSummary> summaries) {
 
-        return new ArticleDto(
-                meta.getId(),
-                summary.getSummaryTitle(),
-                meta.getPress(),
-                meta.getPublishedAt(),
-                meta.getCollectedAt(),
-                summary.getSummaryContent(),
-                meta.getUrl(),
-                0,
-                0
-        );
+        if (summaries == null || summaries.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> articleIds = summaries.stream()
+                .map(s -> s.getArticleMeta().getId())
+                .toList();
+
+        Map<Long, Long> likeMap =
+                articleLikeRepository.countGroupedByArticleIds(articleIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                r -> (Long) r[0],
+                                r -> (Long) r[1]
+                        ));
+
+        Map<Long, Long> commentMap =
+                articleCommentRepository.countGroupedByArticleIds(articleIds)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                r -> (Long) r[0],
+                                r -> (Long) r[1]
+                        ));
+
+        return summaries.stream()
+                .map(summary -> {
+
+                    ArticleMeta meta = summary.getArticleMeta();
+                    Long articleId = meta.getId();
+
+                    long likeCount = likeMap.getOrDefault(articleId, 0L);
+                    long commentCount = commentMap.getOrDefault(articleId, 0L);
+
+                    return new ArticleDto(
+                            articleId,
+                            summary.getSummaryTitle(),
+                            meta.getPress(),
+                            meta.getPublishedAt(),
+                            meta.getCollectedAt(),
+                            summary.getSummaryContent(),
+                            meta.getUrl(),
+                            (int) likeCount,
+                            (int) commentCount
+                    );
+                })
+                .toList();
     }
 
     /**
@@ -132,15 +170,15 @@ public class DailyTimelineService {
         LocalDateTime start = today.atStartOfDay();
         LocalDateTime end = today.plusDays(1).atStartOfDay();
 
-        List<ArticleDto> articles =
+        List<ArticleSummary> summaries =
                 articleSummaryRepository.findByPressTimeline(
-                                presses,
-                                start,
-                                end,
-                                PageRequest.of(0, INITIAL_SIZE)
-                        ).stream()
-                        .map(this::toArticleDto)
-                        .toList();
+                        presses,
+                        start,
+                        end,
+                        PageRequest.of(0, INITIAL_SIZE)
+                );
+
+        List<ArticleDto> articles = toArticleDtos(summaries);
 
         List<TimeGroupDto> groups = groupByFixedTimeline(articles);
 
@@ -155,7 +193,6 @@ public class DailyTimelineService {
 
     /**
      * 시계열(시간 범위) 기준 타임라인 조회
-     *
      * - 특정 날짜(date)의 시간 구간(from ~ to) 기준
      * - 기사 발행 시간(published_at)을 기준으로 필터링
      * - 최신 기사부터 최대 100건 조회
@@ -177,14 +214,14 @@ public class DailyTimelineService {
         LocalDateTime end   = date.atTime(to);
 
         // 발행 시간 기준으로 기사 조회
-        List<ArticleDto> articles =
+        List<ArticleSummary> summaries =
                 articleSummaryRepository.findByPublishedRange(
-                                start,
-                                end,
-                                PageRequest.of(0, INITIAL_SIZE)
-                        ).stream()
-                        .map(this::toArticleDto)
-                        .toList();
+                        start,
+                        end,
+                        PageRequest.of(0, INITIAL_SIZE)
+                );
+
+        List<ArticleDto> articles = toArticleDtos(summaries);
 
         // 2시간 단위 고정 타임라인 그룹핑
         List<TimeGroupDto> groups = groupByFixedTimeline(articles);
@@ -201,7 +238,6 @@ public class DailyTimelineService {
 
     /**
      * 시계열 + 언론사 기준 타임라인 조회
-     *
      * - 특정 날짜(date)의 시간 구간(from ~ to)
      * - 선택한 언론사 목록 기준 필터링
      * - 기사 발행 시간(published_at) 기준 조회
@@ -227,15 +263,15 @@ public class DailyTimelineService {
         LocalDateTime start = date.atTime(from);
         LocalDateTime end   = date.atTime(to);
 
-        List<ArticleDto> articles =
+        List<ArticleSummary> summaries =
                 articleSummaryRepository.findByPublishedRangeAndPress(
-                                presses,
-                                start,
-                                end,
-                                PageRequest.of(0, INITIAL_SIZE)
-                        ).stream()
-                        .map(this::toArticleDto)
-                        .toList();
+                        presses,
+                        start,
+                        end,
+                        PageRequest.of(0, INITIAL_SIZE)
+                );
+
+        List<ArticleDto> articles = toArticleDtos(summaries);
 
         List<TimeGroupDto> groups = groupByFixedTimeline(articles);
 
